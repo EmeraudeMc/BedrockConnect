@@ -14,9 +14,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class BedrockConnect {
     private static String release = "1.69.0";
@@ -42,9 +44,10 @@ public class BedrockConnect {
 
             // Find any settings in startup arguments
             for(String str : args) {
-                if(str.indexOf("=") !=  -1 && str.indexOf("=") < str.length() - 1) {
+                int eq = str.indexOf('=');
+                if(eq != -1 && eq < str.length() - 1) {
                     settingsArgs = true;
-                    settings.put(str.substring(0, str.indexOf("=")), str.substring(str.indexOf("=") + 1));
+                    settings.put(str.substring(0, eq), str.substring(eq + 1));
                 }
             }
 
@@ -55,8 +58,12 @@ public class BedrockConnect {
                 try {
                     ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
                     Map<String, Object> config = mapper.readValue(configFile, Map.class);
-                    for (String configKey : config.keySet()) {
-                        settings.put(configKey.toLowerCase(), config.get(configKey).toString());
+                    if (config != null) {
+                        for (Map.Entry<String, Object> entry : config.entrySet()) {
+                            // Skip empty keys (e.g. "key:" with no value) instead of crashing with a NullPointerException
+                            if (entry.getValue() != null)
+                                settings.put(entry.getKey().toLowerCase(), entry.getValue().toString());
+                        }
                     }
                 } catch(Exception e) {
                     BedrockConnect.logger.error("Issue parsing configuration file", e);
@@ -67,10 +74,12 @@ public class BedrockConnect {
             // Find any settings in environment variables
             try {
                 Map<String, String> env = System.getenv();
-                for (String envName : env.keySet()) {
-                    if (envName.toLowerCase().startsWith("bc_")) {
-                        settingsEnv = true; 
-                        settings.put(envName.toLowerCase().replace("bc_", ""), env.get(envName));
+                for (Map.Entry<String, String> entry : env.entrySet()) {
+                    String envName = entry.getKey().toLowerCase();
+                    if (envName.startsWith("bc_")) {
+                        settingsEnv = true;
+                        // Only strip the leading prefix (replace() would also mangle names containing "bc_" later on)
+                        settings.put(envName.substring(3), entry.getValue());
                     }
                 }
             } catch(SecurityException e) {}       
@@ -108,45 +117,26 @@ public class BedrockConnect {
 
             data = new DataUtil(database);
 
-            // Keep SQL connection alive
-            Timer timer = new Timer();
-            TimerTask task = new TimerTask() {
-                int sec;
-
-                public void run() {
-                    try {
-                        Connection connection = database.getConnection();
-                        if (connection == null || connection.isClosed()) {
-                            connection = database.openConnection();
-                        } else {
-                            if (sec == 600) {
-                                try {
-                                    ResultSet rs = connection
-                                            .createStatement()
-                                            .executeQuery(
-                                                    "SELECT 1");
-                                    rs.next();
-                                } catch (SQLException e) {
-                                    BedrockConnect.logger.error("Error refreshing SQL connection", e);
-                                }
-                                sec = 0;
-                            }
-                        }
-                    } catch (SQLException e) {
-                        BedrockConnect.logger.error("Error refreshing SQL connection", e);
+            // Keep SQL connection alive: validate it every minute (on the database thread) and reopen it if needed
+            ScheduledExecutorService keepAlive = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "BedrockConnect-KeepAlive");
+                t.setDaemon(true);
+                return t;
+            });
+            keepAlive.scheduleAtFixedRate(() -> data.runOnDatabaseThread(() -> {
+                try {
+                    Connection connection = database.getConnection();
+                    if (connection == null || !connection.isValid(5)) {
+                        database.closeConnection();
+                        database.openConnection();
                     }
-                    sec++;
+                } catch (SQLException e) {
+                    BedrockConnect.logger.error("Error refreshing SQL connection", e);
                 }
-            };
-            timer.scheduleAtFixedRate(task, 0L, 60 * 1000);
+            }), 1L, 1L, TimeUnit.MINUTES);
         } else {
             BedrockConnect.logger.info("Player data storage: " + LogColors.cyan("Files"));
             data = new DataUtil(null);
-            Timer timer = new Timer();
-            TimerTask task = new TimerTask() {
-                public void run() { }
-            };
-            timer.scheduleAtFixedRate(task, 0L, 1200L);
         }
     }
 

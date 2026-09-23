@@ -25,7 +25,8 @@ import java.security.PublicKey;
 import java.util.*;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class PacketHandler implements BedrockPacketHandler {
@@ -35,10 +36,15 @@ public class PacketHandler implements BedrockPacketHandler {
     private String uuid;
     private IdentityData extraData;
 
-    private BCPlayer player;
+    // Set from the database thread once player data is loaded
+    private volatile BCPlayer player;
 
-    // Used for server icon fix
-    private ScheduledThreadPoolExecutor executor = null;
+    // Used for server icon fix. Shared by all sessions instead of creating a thread pool per player
+    private static final ScheduledExecutorService SCHEDULER = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "BedrockConnect-Scheduler");
+        t.setDaemon(true);
+        return t;
+    });
 
      public PacketHandler(BedrockServerSession session, boolean packetListening) {
         this.session = session;
@@ -97,19 +103,24 @@ public class PacketHandler implements BedrockPacketHandler {
 
     @Override
     public PacketSignal handle(PlayerActionPacket packet) {
-        player.movementOpen();
+        if(player != null)
+            player.movementOpen();
         return PacketSignal.HANDLED;
     }
 
     @Override
     public PacketSignal handle(AnimatePacket packet) {
-        if(packet.getAction() == AnimatePacket.Action.SWING_ARM)
+        if(player != null && packet.getAction() == AnimatePacket.Action.SWING_ARM)
             player.movementOpen();
         return PacketSignal.HANDLED;
     }
 
     @Override
     public PacketSignal handle(ModalFormResponsePacket packet) {
+        // Player data may still be loading
+        if(player == null)
+            return PacketSignal.HANDLED;
+
         player.setActive();
         player.resetMovementOpen();
 
@@ -402,11 +413,9 @@ public class PacketHandler implements BedrockPacketHandler {
         List<AttributeData> attributes = Collections.singletonList(new AttributeData("minecraft:player.level", 0f, 24791.00f, 0, 0f));
         updateAttributesPacket.setAttributes(attributes);
 
-        if (executor == null)
-            executor = new ScheduledThreadPoolExecutor(1);
-
-        executor.schedule(() -> {
-            session.sendPacket(updateAttributesPacket);
+        SCHEDULER.schedule(() -> {
+            if (session.isConnected())
+                session.sendPacket(updateAttributesPacket);
         }, 500, TimeUnit.MILLISECONDS);
 
         return PacketSignal.HANDLED;
@@ -424,12 +433,16 @@ public class PacketHandler implements BedrockPacketHandler {
             session.sendPacketImmediately(tp);
             BedrockConnect.logger.debug("Transferred player " + name + " to " + tp.getAddress() + ":" + tp.getPort());
         } catch (Exception e) {
-            player.createError(BedrockConnect.getConfig().getLanguage().getWording("error", "transferError"));
+            if(player != null)
+                player.createError(BedrockConnect.getConfig().getLanguage().getWording("error", "transferError"));
         }
     }
 
     @Override
     public PacketSignal handle(SetLocalPlayerAsInitializedPacket packet) {
+        if (player == null)
+            return PacketSignal.HANDLED;
+
         if (BedrockConnect.getConfig().getMotdMessage() != null && player.canShowMotd()) {
             player.openForm(UIForms.MOTD);
         } else {
@@ -470,8 +483,6 @@ public class PacketHandler implements BedrockPacketHandler {
 
     @Override
     public void onDisconnect(CharSequence reason) {
-        if(executor != null)
-            executor.shutdown();
         if(player != null)
             BedrockConnect.getServer().removePlayer(player);
          BedrockConnect.logger.info("[ " + LogColors.cyan(BedrockConnect.getServer().getPlayers().size() + " online") + " ] Player disconnected: " + name + " (xuid: " + uuid + ")");
@@ -533,6 +544,8 @@ public class PacketHandler implements BedrockPacketHandler {
             if (whitelist.hasWhitelist() && !whitelist.isPlayerWhitelisted(name)) {
             	session.disconnect(whitelist.getWhitelistMessage());
             	BedrockConnect.logger.info("Kicked " + name + " (xuid: " + uuid + "): \"" + whitelist.getWhitelistMessage() + "\"");
+            	// Stop here: don't continue the login sequence for a kicked player
+            	return PacketSignal.HANDLED;
             }
 
             PlayStatusPacket status = new PlayStatusPacket();

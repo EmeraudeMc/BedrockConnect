@@ -36,7 +36,7 @@ public class Server {
 
     public BCPlayer getPlayer(String uuid) {
         for (BCPlayer player : players) {
-            if(player != null && player.getUuid() != null && player.getUuid() == uuid)
+            if(player != null && player.getUuid() != null && player.getUuid().equals(uuid))
                 return player;
         }
         return null;
@@ -48,8 +48,7 @@ public class Server {
     }
 
     public void removePlayer(BCPlayer player) {
-        if(this.players.contains(player))
-            this.players.remove(player);
+        this.players.remove(player);
     }
 
     public Server(String bindIp, String port) {
@@ -101,7 +100,7 @@ public class Server {
 
             BedrockConnect.logger.info("[ " + LogColors.green("OK") + " ] Server is now running: " + LogColors.cyan(bindIp + ":" + port));
             if(BedrockConnect.getConfig().canKickInactive()) {
-                Timer timer = new Timer();
+                Timer timer = new Timer("BedrockConnect-InactivityKick", true);
                 TimerTask task = new TimerTask() {
                     public void run() {
                         for (BCPlayer player : players) {
@@ -114,7 +113,7 @@ public class Server {
             }
 
             // Command line input (Currently just for stopping BedrockConnect via command)
-            new Thread() {
+            Thread consoleThread = new Thread("BedrockConnect-Console") {
                 public void run() {
                     Scanner sc = null;
                     try {
@@ -123,7 +122,7 @@ public class Server {
                             String line = sc.nextLine(); 
                             String[] parts = line.trim().split("\\s+");
 
-                            if (parts.length == 0) {
+                            if (parts.length == 0 || parts[0].isEmpty()) {
                                 continue;
                             }
 
@@ -162,7 +161,9 @@ public class Server {
                         }
                     }
                 }
-            }.start();
+            };
+            consoleThread.setDaemon(true);
+            consoleThread.start();
 
         } catch(Exception e) {
             if (e instanceof BindException) {

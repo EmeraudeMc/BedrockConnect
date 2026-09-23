@@ -2,7 +2,9 @@ package main.com.pyratron.pugmatt.bedrockconnect.config;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import main.com.pyratron.pugmatt.bedrockconnect.BedrockConnect;
 
@@ -10,6 +12,8 @@ import main.com.pyratron.pugmatt.bedrockconnect.BedrockConnect;
 public class Whitelist {
 
 	private List<String> whitelist = null;
+	// Set used for O(1) lookups on login
+	private Set<String> whitelistSet = null;
 	private String whitelistMessage = "You are not whitelisted on this server";
 
 	public Whitelist(String whitelistFile) {
@@ -17,7 +21,10 @@ public class Whitelist {
 		
 		try {
 			File file = new File(whitelistFile);
-			whitelist =  Files.readAllLines(file.toPath());
+			whitelist = Files.readAllLines(file.toPath());
+			whitelist.replaceAll(String::trim);
+			whitelist.removeIf(String::isEmpty);
+			whitelistSet = new HashSet<>(whitelist);
 			BedrockConnect.logger.debug("Whitelist data: " + whitelist.toString());
 		} catch (Exception e) {
 			BedrockConnect.logger.error("Error loading whitelist", e);
@@ -34,7 +41,7 @@ public class Whitelist {
 	}
 
 	public boolean isPlayerWhitelisted(String name) {
-		return whitelist.contains(name);
+		return whitelistSet.contains(name);
 	}
 
 	public String getWhitelistMessage() {
