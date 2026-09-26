@@ -56,19 +56,24 @@ public class Language {
     }
 
     private JSONObject loadDefault() throws IOException {
-        InputStream stream = BedrockConnect.class.getClassLoader().getResourceAsStream(DEFAULT_PATH);
+        try (InputStream stream = BedrockConnect.class.getClassLoader().getResourceAsStream(DEFAULT_PATH)) {
+            ObjectMapper mapper = new ObjectMapper();
+            Map<String,Object> langMap = mapper.readValue(stream, Map.class);
 
-        ObjectMapper mapper = new ObjectMapper();
-        Map<String,Object> langMap = mapper.readValue(stream, Map.class);
-
-        return new JSONObject(langMap);
+            return new JSONObject(langMap);
+        }
     }
 
     private JSONObject loadCustom(String file) throws IOException, ParseException {
-        return (JSONObject) new JSONParser().parse(new BufferedReader(new InputStreamReader(new FileInputStream(file),"UTF-8")));
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"))) {
+            return (JSONObject) new JSONParser().parse(reader);
+        }
     }
 
     public String getWording(String rootKey, String key) {
-        return elements.containsKey(rootKey) && elements.get(rootKey).containsKey(key) ? elements.get(rootKey).get(key).toString() : "N/A";
+        HashMap<String,String> set = elements.get(rootKey);
+        if (set == null) return "N/A";
+        Object value = set.get(key);
+        return value != null ? value.toString() : "N/A";
     }
 }

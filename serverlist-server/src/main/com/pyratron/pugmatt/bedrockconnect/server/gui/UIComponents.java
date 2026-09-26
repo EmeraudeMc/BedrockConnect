@@ -12,8 +12,17 @@ import org.json.simple.parser.ParseException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 public class UIComponents {
+
+    // Compiled once instead of on every String.matches() call
+    private static final Pattern IPV4 = Pattern.compile("^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$");
+    private static final Pattern HOSTNAME = Pattern.compile("^((?!-)[A-Za-z0-9_-]{1,63}(?<!-)\\.)+[A-Za-z]{2,64}$");
+    private static final Pattern PORT = Pattern.compile("[0-9]+");
+    private static final Pattern DISPLAY_NAME = Pattern.compile("^[a-zA-Z0-9]+( +[a-zA-Z0-9]+)*$");
+    private static final Pattern DOMAIN = Pattern.compile("(?![\\d.]+)((?!-))(xn--)?[a-z0-9][a-z0-9-_]{0,61}[a-z0-9]{0,1}\\.(xn--)?([a-z0-9\\._-]{1,61}|[a-z0-9-]{1,30})");
+    private static final Pattern WHITESPACE = Pattern.compile("\\s");
 
     public static JsonObject createLabel(String text) {
         JsonObject obj = new JsonObject();
@@ -85,9 +94,9 @@ public class UIComponents {
     public static JsonObject createDropdown(List<String> options, String title, String defaultIndex) {
         JsonObject dropdown = new JsonObject();
         dropdown.addProperty("type", "dropdown");
-        JsonArray servers = new JsonArray();
-        for(int i=0;i<options.size();i++) {
-            servers.add(options.get(i));
+        JsonArray servers = new JsonArray(options.size());
+        for(String option : options) {
+            servers.add(option);
         }
         dropdown.add("options", servers);
         dropdown.addProperty("text", title);
@@ -96,14 +105,8 @@ public class UIComponents {
     }
 
     public static String serversToFormData(List<String> list) {
-        String listString = "[";
-        for(int i=0;i<list.size();i++) {
-            listString += '"' + list.get(i) + '"';
-            if(i != list.size()-1)
-                listString += ",";
-        }
-        listString += "]";
-        return listString;
+        // Same ["a","b"] format as before, but built in one pass and with proper JSON escaping
+        return JSONArray.toJSONString(list);
     }
 
     public static ArrayList<String> getFormData(String data) {
@@ -115,9 +118,9 @@ public class UIComponents {
 
         try {
             JSONArray obj = (JSONArray) parser.parse(data);
-            ArrayList<String> strings = new ArrayList<>();
-            for(int i=0;i<obj.size();i++) {
-                strings.add(obj.get(i).toString());
+            ArrayList<String> strings = new ArrayList<>(obj.size());
+            for(Object o : obj) {
+                strings.add(String.valueOf(o));
             }
             return strings;
         } catch(ParseException e) {
@@ -134,11 +137,11 @@ public class UIComponents {
             player.createError(BedrockConnect.getConfig().getLanguage().getWording("error", "portLarge"));
         else if(name.length() >= 36)
             player.createError(BedrockConnect.getConfig().getLanguage().getWording("error", "nameLarge"));
-        else if (!address.matches("^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$") && !address.matches("^((?!-)[A-Za-z0-9_-]{1,63}(?<!-)\\.)+[A-Za-z]{2,64}$"))
+        else if (!IPV4.matcher(address).matches() && !HOSTNAME.matcher(address).matches())
             player.createError(BedrockConnect.getConfig().getLanguage().getWording("error", "invalidAddress"));
-        else if (!port.matches("[0-9]+"))
+        else if (!PORT.matcher(port).matches())
             player.createError(BedrockConnect.getConfig().getLanguage().getWording("error", "invalidPort"));
-        else if (!name.isEmpty() && !name.matches("^[a-zA-Z0-9]+( +[a-zA-Z0-9]+)*$"))
+        else if (!name.isEmpty() && !DISPLAY_NAME.matcher(name).matches())
             player.createError(BedrockConnect.getConfig().getLanguage().getWording("error", "invalidName"));
         else
             return true;
@@ -146,12 +149,13 @@ public class UIComponents {
     }
 
     public static boolean isDomain(String address) {
-        return address.matches("(?![\\d.]+)((?!-))(xn--)?[a-z0-9][a-z0-9-_]{0,61}[a-z0-9]{0,1}\\.(xn--)?([a-z0-9\\._-]{1,61}|[a-z0-9-]{1,30})");
+        return DOMAIN.matcher(address).matches();
     }
 
     public static String[] validateAddress(String server, BCPlayer player) {
-        if (server.split(":").length > 1) {
-            return server.split(":");
+        String[] parts = server.split(":");
+        if (parts.length > 1) {
+            return parts;
         } else {
             player.createError((BedrockConnect.getConfig().getLanguage().getWording("error", "invalidUserServer")));
         }
@@ -159,8 +163,8 @@ public class UIComponents {
     }
 
     public static ArrayList<String> cleanAddress(ArrayList<String> data) {
-        data.set(0, data.get(0).replaceAll("\\s",""));
-        data.set(1, data.get(1).replaceAll("\\s",""));
+        data.set(0, WHITESPACE.matcher(data.get(0)).replaceAll(""));
+        data.set(1, WHITESPACE.matcher(data.get(1)).replaceAll(""));
         return data;
     }
 

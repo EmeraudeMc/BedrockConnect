@@ -19,10 +19,9 @@ import org.cloudburstmc.protocol.common.util.OptionalBoolean;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 public class BCPlayer {
 
@@ -34,11 +33,15 @@ public class BCPlayer {
     private String displayName;
     private String uuid;
 
-    private LocalTime lastAction;
+    // Monotonic timestamps (System.nanoTime) - LocalTime wrapped around at midnight and broke the inactivity/cooldown checks
+    private static final long INACTIVE_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(10);
+    private static final long MOVEMENT_OPEN_COOLDOWN_NANOS = TimeUnit.SECONDS.toNanos(1);
+
+    private volatile long lastAction;
     private LocalDateTime viewedMotd;
 
     private int currentForm = 0;
-    private LocalTime movementOpenCoolDown = LocalTime.now();
+    private long movementOpenCoolDown = System.nanoTime();
 
     private int editingServer = -1;
     private int selectedGroup = -1;
@@ -69,7 +72,7 @@ public class BCPlayer {
         this.session = session;
         this.serverList = serverList;
         this.serverLimit = serverLimit;
-        this.lastAction = LocalTime.now();
+        this.lastAction = System.nanoTime();
         this.viewedMotd = viewedMotd;
         this.newPlayer = newPlayer;
 
@@ -151,13 +154,13 @@ public class BCPlayer {
         session.sendPacket(text2);
     }
 
-    public boolean isActive() { return Duration.between(lastAction, LocalTime.now()).toMillis() <= 600000; }
+    public boolean isActive() { return System.nanoTime() - lastAction <= INACTIVE_TIMEOUT_NANOS; }
 
-    public boolean canMovementOpen() { return Duration.between(movementOpenCoolDown, LocalTime.now()).toMillis() > 1000; }
+    public boolean canMovementOpen() { return System.nanoTime() - movementOpenCoolDown > MOVEMENT_OPEN_COOLDOWN_NANOS; }
 
-    public void resetMovementOpen() { movementOpenCoolDown = LocalTime.now(); }
+    public void resetMovementOpen() { movementOpenCoolDown = System.nanoTime(); }
 
-    public void setActive() { lastAction = LocalTime.now(); }
+    public void setActive() { lastAction = System.nanoTime(); }
 
     public void setEditingServer(int server) { editingServer = server; }
 
@@ -188,7 +191,7 @@ public class BCPlayer {
 
             session.sendPacketImmediately(form);
 
-            movementOpenCoolDown = LocalTime.now();
+            movementOpenCoolDown = System.nanoTime();
         }
     }
 
@@ -321,7 +324,7 @@ public class BCPlayer {
 
         Vector3f pos = Vector3f.ZERO;
         int chunkX = pos.getFloorX() >> 4;
-        int chunkZ = pos.getFloorX() >> 4;
+        int chunkZ = pos.getFloorZ() >> 4;
 
         for (int x = -3; x < 3; x++) {
             for (int z = -3; z < 3; z++) {

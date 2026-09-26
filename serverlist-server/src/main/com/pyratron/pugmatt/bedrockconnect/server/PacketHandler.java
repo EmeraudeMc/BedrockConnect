@@ -25,8 +25,10 @@ import java.security.PublicKey;
 import java.util.*;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Supplier;
 import java.util.concurrent.TimeUnit;
 
 public class PacketHandler implements BedrockPacketHandler {
@@ -46,7 +48,14 @@ public class PacketHandler implements BedrockPacketHandler {
         return t;
     });
 
-     public PacketHandler(BedrockServerSession session, boolean packetListening) {
+     // DNS lookups are blocking: run them here instead of on the Netty event loop, which would stall every player sharing it
+    private static final ExecutorService DNS_EXECUTOR = Executors.newFixedThreadPool(4, r -> {
+        Thread t = new Thread(r, "BedrockConnect-DNS");
+        t.setDaemon(true);
+        return t;
+    });
+
+    public PacketHandler(BedrockServerSession session, boolean packetListening) {
         this.session = session;
     }
 
@@ -62,7 +71,10 @@ public class PacketHandler implements BedrockPacketHandler {
                 BedrockConnect.logger.debug("Retrieved " + address + " host address from hostname " + hostname);
                 return address;
             } else {
-                return BedrockConnect.getConfig().getFeaturedServerIps().get(hostname);
+                // Fall back to the hostname (resolved by the client) if the IP file has no entry for it
+                // e.g. "geo.hivebedrock.network" while the file stores "hivebedrock.network"
+                String ip = BedrockConnect.getConfig().getFeaturedServerIps().get(hostname);
+                return ip != null ? ip : hostname;
             }
         } catch (UnknownHostException ex) {
             BedrockConnect.logger.error("Error retrieving IP from hostname", ex);
@@ -185,22 +197,22 @@ public class PacketHandler implements BedrockPacketHandler {
 
                                 switch (featuredServer) {
                                     case 0: // Hive
-                                        transfer(getIP("geo.hivebedrock.network"), 19132);
+                                        transferAsync(() -> getIP("geo.hivebedrock.network"), 19132);
                                         break;
                                     case 1: // Cubecraft
-                                        transfer(!BedrockConnect.getConfig().canFetchFeaturedIps() ? getIP("mco.cubecraft.net") : "mco.cubecraft.net", 19132);
+                                        transferAsync(() -> !BedrockConnect.getConfig().canFetchFeaturedIps() ? getIP("mco.cubecraft.net") : "mco.cubecraft.net", 19132);
                                         break;
                                     case 2: // Lifeboat
-                                        transfer(getIP("mco.lbsg.net"), 19132);
+                                        transferAsync(() -> getIP("mco.lbsg.net"), 19132);
                                         break;
                                     case 3: // Mineville
-                                        transfer(getIP("play.inpvp.net"), 19132);
+                                        transferAsync(() -> getIP("play.inpvp.net"), 19132);
                                         break;
                                     case 4: // Galaxite
-                                        transfer(getIP("play.galaxite.net"), 19132);
+                                        transferAsync(() -> getIP("play.galaxite.net"), 19132);
                                         break;
                                     case 5: // Enchanted Dragons
-                                        transfer(getIP("play.enchanted.gg"), 19132);
+                                        transferAsync(() -> getIP("play.enchanted.gg"), 19132);
                                         break;
                                 }
                                 break;
@@ -421,7 +433,30 @@ public class PacketHandler implements BedrockPacketHandler {
         return PacketSignal.HANDLED;
     }
 
+    /**
+     * Resolve the address on the DNS thread pool, then transfer the player
+     */
+    private void transferAsync(Supplier<String> address, int port) {
+        DNS_EXECUTOR.execute(() -> {
+            try {
+                transferNow(address.get(), port);
+            } catch (Exception e) {
+                if(player != null)
+                    player.createError(BedrockConnect.getConfig().getLanguage().getWording("error", "transferError"));
+            }
+        });
+    }
+
     public void transfer(String ip, int port) {
+        // Only hop threads when a DNS lookup is actually needed
+        if(BedrockConnect.getConfig().canFetchIps() && UIComponents.isDomain(ip)) {
+            transferAsync(() -> ip, port);
+        } else {
+            transferNow(ip, port);
+        }
+    }
+
+    private void transferNow(String ip, int port) {
         try {
             TransferPacket tp = new TransferPacket();
             if(BedrockConnect.getConfig().canFetchIps() && UIComponents.isDomain(ip)) {

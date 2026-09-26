@@ -16,6 +16,8 @@ import main.com.pyratron.pugmatt.bedrockconnect.config.Custom.CustomServerGroup;
 
 public class CustomServerHandler {
 	private ArrayList<CustomEntry> servers = new ArrayList<>();
+	// Cached array: getServers() is called on every form open/click, no need to copy the list each time
+	private CustomEntry[] serversArray = new CustomEntry[0];
 
 	/**
 	 * Loads any custom servers into memory
@@ -48,6 +50,8 @@ public class CustomServerHandler {
 				}
 			}
 
+			serversArray = servers.toArray(new CustomEntry[0]);
+
 			BedrockConnect.logger.debug("Custom server data: " + serverList.toString());
 
 		} catch (Exception e) {
@@ -67,8 +71,6 @@ public class CustomServerHandler {
 	}
 
 	public CustomEntry[] getServers() {
-		CustomEntry[] arr = new CustomEntry[servers.size()];
-		arr = servers.toArray(arr);
-		return arr;
+		return serversArray;
 	}
 }

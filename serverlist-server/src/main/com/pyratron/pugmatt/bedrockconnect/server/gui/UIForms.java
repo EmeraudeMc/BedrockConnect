@@ -23,6 +23,11 @@ public class UIForms {
 
     public static final int DEFAULT_PORT = 19132;
 
+    // Forms whose content never changes after startup: serialized once instead of on every click
+    private static final String manageListFormData;
+    private static final String addServerFormData;
+    private static final String directConnectFormData;
+
     static {
         mainMenuButtons.add(UIComponents.createButton(BedrockConnect.getConfig().getLanguage().getWording("main", "connectBtn")));
         mainMenuButtons.add(UIComponents.createButton(BedrockConnect.getConfig().getLanguage().getWording("main", "manageBtn")));
@@ -41,6 +46,10 @@ public class UIForms {
         featuredServerButtons.add(UIComponents.createButton("Mineville", "https://i.imgur.com/0K4TDut.png", "url"));
         featuredServerButtons.add(UIComponents.createButton("Galaxite", "https://i.imgur.com/VxXO8Of.png", "url"));
         featuredServerButtons.add(UIComponents.createButton("Enchanted Dragons", "https://i.imgur.com/1Fh9CBf.png", "url"));
+
+        manageListFormData = buildManageListFormData();
+        addServerFormData = buildAddServerFormData();
+        directConnectFormData = buildDirectConnectFormData();
     }
 
     public static ModalFormRequestPacket createMain(List<String> servers, BedrockServerSession session) {
@@ -164,52 +173,21 @@ public class UIForms {
     public static ModalFormRequestPacket createManageList() {
         ModalFormRequestPacket mf = new ModalFormRequestPacket();
         mf.setFormId(UIForms.MANAGE_SERVER);
-
-        JsonObject out = UIComponents.createForm("form", BedrockConnect.getConfig().getLanguage().getWording("manage", "heading"));
-        out.addProperty("content", "");
-
-        JsonArray buttons = new JsonArray();
-        buttons.addAll(manageListButtons);
-
-        out.add("buttons", buttons);
-
-        mf.setFormData(out.toString());
-
+        mf.setFormData(manageListFormData);
         return mf;
     }
 
     public static ModalFormRequestPacket createAddServer() {
         ModalFormRequestPacket mf = new ModalFormRequestPacket();
         mf.setFormId(UIForms.ADD_SERVER);
-        JsonObject out = UIComponents.createForm("custom_form", BedrockConnect.getConfig().getLanguage().getWording("add", "heading"));
-
-        JsonArray inputs = new JsonArray();
-
-        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "addressTitle"), BedrockConnect.getConfig().getLanguage().getWording("connect", "addressPlaceholder")));
-        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "portTitle"), BedrockConnect.getConfig().getLanguage().getWording("connect", "portPlaceholder"), Integer.toString(DEFAULT_PORT)));
-        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "displayNameTitle"), "", ""));
-
-        out.add("content", inputs);
-        mf.setFormData(out.toString());
-
+        mf.setFormData(addServerFormData);
         return mf;
     }
 
     public static ModalFormRequestPacket createDirectConnect() {
         ModalFormRequestPacket mf = new ModalFormRequestPacket();
         mf.setFormId(UIForms.DIRECT_CONNECT);
-        JsonObject out = UIComponents.createForm("custom_form", BedrockConnect.getConfig().getLanguage().getWording("connect", "heading"));
-
-        JsonArray inputs = new JsonArray();
-
-        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "addressTitle"), BedrockConnect.getConfig().getLanguage().getWording("connect", "addressPlaceholder")));
-        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "portTitle"), BedrockConnect.getConfig().getLanguage().getWording("connect", "portPlaceholder"), Integer.toString(DEFAULT_PORT)));
-        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "displayNameTitle"), "", ""));
-        inputs.add(UIComponents.createToggle(BedrockConnect.getConfig().getLanguage().getWording("connect", "addToggle")));
-
-        out.add("content", inputs);
-        mf.setFormData(out.toString());
-
+        mf.setFormData(directConnectFormData);
         return mf;
     }
 
@@ -294,5 +272,44 @@ public class UIForms {
 
         mf.setFormData(form.toString());
         return mf;
+    }
+
+    private static String buildManageListFormData() {
+        JsonObject out = UIComponents.createForm("form", BedrockConnect.getConfig().getLanguage().getWording("manage", "heading"));
+        out.addProperty("content", "");
+
+        JsonArray buttons = new JsonArray();
+        buttons.addAll(manageListButtons);
+
+        out.add("buttons", buttons);
+
+        return out.toString();
+    }
+
+    private static String buildAddServerFormData() {
+        JsonObject out = UIComponents.createForm("custom_form", BedrockConnect.getConfig().getLanguage().getWording("add", "heading"));
+
+        JsonArray inputs = new JsonArray();
+
+        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "addressTitle"), BedrockConnect.getConfig().getLanguage().getWording("connect", "addressPlaceholder")));
+        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "portTitle"), BedrockConnect.getConfig().getLanguage().getWording("connect", "portPlaceholder"), Integer.toString(DEFAULT_PORT)));
+        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "displayNameTitle"), "", ""));
+
+        out.add("content", inputs);
+        return out.toString();
+    }
+
+    private static String buildDirectConnectFormData() {
+        JsonObject out = UIComponents.createForm("custom_form", BedrockConnect.getConfig().getLanguage().getWording("connect", "heading"));
+
+        JsonArray inputs = new JsonArray();
+
+        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "addressTitle"), BedrockConnect.getConfig().getLanguage().getWording("connect", "addressPlaceholder")));
+        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "portTitle"), BedrockConnect.getConfig().getLanguage().getWording("connect", "portPlaceholder"), Integer.toString(DEFAULT_PORT)));
+        inputs.add(UIComponents.createInput(BedrockConnect.getConfig().getLanguage().getWording("connect", "displayNameTitle"), "", ""));
+        inputs.add(UIComponents.createToggle(BedrockConnect.getConfig().getLanguage().getWording("connect", "addToggle")));
+
+        out.add("content", inputs);
+        return out.toString();
     }
 }

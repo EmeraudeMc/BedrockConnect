@@ -27,7 +27,9 @@ import org.cloudburstmc.protocol.bedrock.codec.v944.Bedrock_v944;
 import org.cloudburstmc.protocol.bedrock.codec.v975.Bedrock_v975;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 // Referenced from: https://github.com/GeyserMC/Geyser/blob/master/connector/src/main/java/org/geysermc/connector/network/BedrockProtocol.java
 
@@ -42,6 +44,8 @@ public class BedrockProtocol {
      * A list of all supported Bedrock versions that can join BedrockConnect
      */
     public static final List<BedrockCodec> SUPPORTED_BEDROCK_CODECS = new ArrayList<>();
+
+    private static final Map<Integer, BedrockCodec> CODECS_BY_PROTOCOL = new HashMap<>();
 
     static {
         SUPPORTED_BEDROCK_CODECS.add(Bedrock_v649.CODEC);
@@ -78,6 +82,10 @@ public class BedrockProtocol {
         SUPPORTED_BEDROCK_CODECS.add(Bedrock_v975.CODEC);
         SUPPORTED_BEDROCK_CODECS.add(Bedrock_v1001.CODEC);
         SUPPORTED_BEDROCK_CODECS.add(DEFAULT_BEDROCK_CODEC);
+
+        for (BedrockCodec codec : SUPPORTED_BEDROCK_CODECS) {
+            CODECS_BY_PROTOCOL.putIfAbsent(codec.getProtocolVersion(), codec);
+        }
     }
 
     /**
@@ -86,11 +94,6 @@ public class BedrockProtocol {
      * @return The packet codec, or null if the client's protocol is unsupported
      */
     public static BedrockCodec getBedrockCodec(int protocolVersion) {
-        for (BedrockCodec packetCodec : SUPPORTED_BEDROCK_CODECS) {
-            if (packetCodec.getProtocolVersion() == protocolVersion) {
-                return packetCodec;
-            }
-        }
-        return null;
+        return CODECS_BY_PROTOCOL.get(protocolVersion);
     }
 }

@@ -328,9 +328,10 @@ public class Config {
                     pw.flush();
                     pw.close();
                 } else {
-                    Object obj = new JSONParser().parse(new FileReader("featured_server_ips.json"));
-
-                    JSONObject jo = (JSONObject) obj;
+                    JSONObject jo;
+                    try (FileReader reader = new FileReader("featured_server_ips.json")) {
+                        jo = (JSONObject) new JSONParser().parse(reader);
+                    }
                     for (Object server : jo.keySet()) {
                         featuredServerIps.put((String) server, (String) jo.get(server));
                     }
@@ -351,14 +352,14 @@ public class Config {
     public void loadMotdMessage() {        
         if (motdFile != null) {
             try {
-                BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(motdFile), "UTF-8"));
-                String msg = "";
-                String line = "";
-                while ((line = in.readLine()) != null) {
-                    msg += line + "\n";
+                StringBuilder msg = new StringBuilder();
+                try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(motdFile), "UTF-8"))) {
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        msg.append(line).append('\n');
+                    }
                 }
-                motdMessage = msg + "\n";
-                in.close();
+                motdMessage = msg.append('\n').toString();
                 BedrockConnect.logger.info("Loaded MOTD");
                 BedrockConnect.logger.debug("MOTD data: " + motdMessage.toString());
             } catch (Exception e) {
