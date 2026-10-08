@@ -40,7 +40,7 @@ public class BCPlayer {
     private volatile long lastAction;
     private LocalDateTime viewedMotd;
 
-    private int currentForm = 0;
+    private volatile int currentForm = 0;
     private long movementOpenCoolDown = System.nanoTime();
 
     private int editingServer = -1;
@@ -196,11 +196,32 @@ public class BCPlayer {
     }
 
     public void openForm(int formId) {
-        ModalFormRequestPacket form = getForm(formId);
+        if (BedrockConnect.getConfig().isServerStatusEnabled() && (formId == UIForms.MAIN || formId == UIForms.SERVER_GROUP)) {
+            // Ping the listed servers first (cached, waits at most ~1s) so the list shows their status
+            List<ServerStatusService.Target> targets = formId == UIForms.MAIN
+                    ? UIForms.getMainStatusTargets(new ArrayList<>(getServerList()))
+                    : UIForms.getGroupStatusTargets((CustomServerGroup) BedrockConnect.getConfig().getCustomServers()[getSelectedGroup()]);
 
-        session.sendPacketImmediately(form);
+            ServerStatusService.refresh(targets).thenRun(() -> sendForm(formId));
+            return;
+        }
 
-        setCurrentForm(formId);
+        sendForm(formId);
+    }
+
+    private void sendForm(int formId) {
+        try {
+            if (!session.isConnected())
+                return;
+
+            ModalFormRequestPacket form = getForm(formId);
+
+            session.sendPacketImmediately(form);
+
+            setCurrentForm(formId);
+        } catch (Exception e) {
+            BedrockConnect.logger.error("Error opening form", e);
+        }
     }
 
     private ModalFormRequestPacket getForm(int formId) {
@@ -208,7 +229,8 @@ public class BCPlayer {
 
         switch (formId) {
             case UIForms.MAIN:
-                form = UIForms.createMain(getServerList(), session);
+                // Copy: the form may be built on a status thread
+                form = UIForms.createMain(new ArrayList<>(getServerList()), session);
                 break;
             case UIForms.DIRECT_CONNECT:
                 form = UIForms.createDirectConnect();

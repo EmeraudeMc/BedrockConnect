@@ -6,6 +6,7 @@ import main.com.pyratron.pugmatt.bedrockconnect.*;
 import main.com.pyratron.pugmatt.bedrockconnect.config.Custom.CustomEntry;
 import main.com.pyratron.pugmatt.bedrockconnect.config.Custom.CustomServer;
 import main.com.pyratron.pugmatt.bedrockconnect.config.Custom.CustomServerGroup;
+import main.com.pyratron.pugmatt.bedrockconnect.server.ServerStatusService;
 
 import org.cloudburstmc.protocol.bedrock.BedrockServerSession;
 import org.cloudburstmc.protocol.bedrock.packet.ModalFormRequestPacket;
@@ -22,6 +23,13 @@ public class UIForms {
     public static JsonArray featuredServerButtons = new JsonArray();
 
     public static final int DEFAULT_PORT = 19132;
+
+    // Featured servers, in button order (must match the order handled in PacketHandler)
+    private static final String[] FEATURED_NAMES = {"The Hive", "CubeCraft Games", "Lifeboat Network", "Mineville", "Galaxite", "Enchanted Dragons"};
+    private static final String[] FEATURED_ICONS = {"https://i.imgur.com/RfxfPGz.png", "https://i.imgur.com/aFH1NUr.png", "https://i.imgur.com/LoI7bYx.png", "https://i.imgur.com/0K4TDut.png", "https://i.imgur.com/VxXO8Of.png", "https://i.imgur.com/1Fh9CBf.png"};
+    private static final String[] FEATURED_HOSTS = {"geo.hivebedrock.network", "mco.cubecraft.net", "mco.lbsg.net", "play.inpvp.net", "play.galaxite.net", "play.enchanted.gg"};
+
+    private static final String USER_SERVER_ICON = "https://i.imgur.com/nhumQVP.png";
 
     // Forms whose content never changes after startup: serialized once instead of on every click
     private static final String manageListFormData;
@@ -40,12 +48,9 @@ public class UIForms {
         manageListButtons.add(UIComponents.createButton(BedrockConnect.getConfig().getLanguage().getWording("manage", "editBtn")));
         manageListButtons.add(UIComponents.createButton(removeBtnText));
 
-        featuredServerButtons.add(UIComponents.createButton("The Hive", "https://i.imgur.com/RfxfPGz.png", "url"));
-        featuredServerButtons.add(UIComponents.createButton("CubeCraft Games", "https://i.imgur.com/aFH1NUr.png", "url"));
-        featuredServerButtons.add(UIComponents.createButton("Lifeboat Network", "https://i.imgur.com/LoI7bYx.png", "url"));
-        featuredServerButtons.add(UIComponents.createButton("Mineville", "https://i.imgur.com/0K4TDut.png", "url"));
-        featuredServerButtons.add(UIComponents.createButton("Galaxite", "https://i.imgur.com/VxXO8Of.png", "url"));
-        featuredServerButtons.add(UIComponents.createButton("Enchanted Dragons", "https://i.imgur.com/1Fh9CBf.png", "url"));
+        for (int i = 0; i < FEATURED_NAMES.length; i++) {
+            featuredServerButtons.add(UIComponents.createButton(FEATURED_NAMES[i], FEATURED_ICONS[i], "url"));
+        }
 
         manageListFormData = buildManageListFormData();
         addServerFormData = buildAddServerFormData();
@@ -67,16 +72,35 @@ public class UIForms {
         else
             buttons.add(UIComponents.createButton(BedrockConnect.getConfig().getLanguage().getWording("main", "exitBtn")));
 
-        for(int i=0;i<servers.size();i++) {
-            buttons.add(UIComponents.createButton(UIComponents.getServerDisplayName(servers.get(i)), "https://i.imgur.com/nhumQVP.png", "url"));
+        boolean showStatus = BedrockConnect.getConfig().isServerStatusEnabled();
+
+        for (String server : servers) {
+            String text = UIComponents.getServerDisplayName(server);
+            if (showStatus) {
+                String[] parts = server.split(":");
+                text = withStatus(text, parts.length > 1 ? cachedStatus(parts[0], parts[1]) : null);
+            }
+            buttons.add(UIComponents.createButton(text, USER_SERVER_ICON, "url"));
         }
 
         for (CustomEntry cs : customServers) {
-            buttons.add(UIComponents.createButton(cs.getName(), cs.getIconUrl(), "url"));
+            String text = cs.getName();
+            if (showStatus && cs instanceof CustomServer) {
+                CustomServer server = (CustomServer) cs;
+                text = withStatus(text, ServerStatusService.getCachedStatus(server.getAddress(), server.getPort()));
+            }
+            buttons.add(UIComponents.createButton(text, cs.getIconUrl(), "url"));
         }
 
         if(BedrockConnect.getConfig().isFeaturedServersEnabled()) {
-            buttons.addAll(featuredServerButtons);
+            if (showStatus) {
+                for (int i = 0; i < FEATURED_NAMES.length; i++) {
+                    String text = withStatus(FEATURED_NAMES[i], ServerStatusService.getCachedStatus(featuredPingHost(i), DEFAULT_PORT));
+                    buttons.add(UIComponents.createButton(text, FEATURED_ICONS[i], "url"));
+                }
+            } else {
+                buttons.addAll(featuredServerButtons);
+            }
         }
 
         out.add("buttons", buttons);
@@ -99,8 +123,12 @@ public class UIForms {
 
         buttons.add(UIComponents.createButton(BedrockConnect.getConfig().getLanguage().getWording("serverGroup", "backBtn")));
 
+        boolean showStatus = BedrockConnect.getConfig().isServerStatusEnabled();
         for (CustomServer cs : group.getServers()) {
-            buttons.add(UIComponents.createButton(cs.getName(), cs.getIconUrl(), "url"));
+            String text = cs.getName();
+            if (showStatus)
+                text = withStatus(text, ServerStatusService.getCachedStatus(cs.getAddress(), cs.getPort()));
+            buttons.add(UIComponents.createButton(text, cs.getIconUrl(), "url"));
         }
 
         out.add("buttons", buttons);
@@ -110,6 +138,87 @@ public class UIForms {
         fixIcons(session);
 
         return mf;
+    }
+
+    /**
+     * Servers shown on the main list, to ping before opening it
+     */
+    public static List<ServerStatusService.Target> getMainStatusTargets(List<String> servers) {
+        List<ServerStatusService.Target> targets = new ArrayList<>();
+        boolean allowPrivate = BedrockConnect.getConfig().canPingPrivateServers();
+
+        for (String server : servers) {
+            String[] parts = server.split(":");
+            int port = parts.length > 1 ? parsePort(parts[1]) : -1;
+            if (port > 0)
+                targets.add(new ServerStatusService.Target(parts[0], port, allowPrivate));
+        }
+
+        // Custom servers are set by the server owner, so they may be on a private network
+        for (CustomEntry cs : BedrockConnect.getConfig().getCustomServers()) {
+            if (cs instanceof CustomServer) {
+                CustomServer server = (CustomServer) cs;
+                targets.add(new ServerStatusService.Target(server.getAddress(), server.getPort(), true));
+            }
+        }
+
+        if (BedrockConnect.getConfig().isFeaturedServersEnabled()) {
+            for (int i = 0; i < FEATURED_HOSTS.length; i++) {
+                targets.add(new ServerStatusService.Target(featuredPingHost(i), DEFAULT_PORT, true));
+            }
+        }
+        return targets;
+    }
+
+    public static List<ServerStatusService.Target> getGroupStatusTargets(CustomServerGroup group) {
+        List<ServerStatusService.Target> targets = new ArrayList<>();
+        for (CustomServer cs : group.getServers()) {
+            targets.add(new ServerStatusService.Target(cs.getAddress(), cs.getPort(), true));
+        }
+        return targets;
+    }
+
+    // With fetch_featured_ips disabled, use the configured IP (the hostname may point back to BedrockConnect via DNS)
+    private static String featuredPingHost(int index) {
+        String host = FEATURED_HOSTS[index];
+        if (!BedrockConnect.getConfig().canFetchFeaturedIps() && BedrockConnect.getConfig().getFeaturedServerIps() != null) {
+            String ip = BedrockConnect.getConfig().getFeaturedServerIps().get(host);
+            if (ip != null)
+                return ip;
+        }
+        return host;
+    }
+
+    private static ServerStatusService.Status cachedStatus(String host, String port) {
+        int p = parsePort(port);
+        return p > 0 ? ServerStatusService.getCachedStatus(host, p) : null;
+    }
+
+    private static int parsePort(String port) {
+        try {
+            int p = Integer.parseInt(port.trim());
+            return p > 0 && p <= 65535 ? p : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * Add a status line under the button text (left unchanged if the status is unknown)
+     */
+    private static String withStatus(String text, ServerStatusService.Status status) {
+        if (status == null)
+            return text;
+
+        String line;
+        if (status.isOnline()) {
+            line = BedrockConnect.getConfig().getLanguage().getWording("serverStatus", "online")
+                    .replace("%PLAYERS%", Integer.toString(status.getPlayers()))
+                    .replace("%MAX_PLAYERS%", Integer.toString(status.getMaxPlayers()));
+        } else {
+            line = BedrockConnect.getConfig().getLanguage().getWording("serverStatus", "offline");
+        }
+        return text + "\n" + line;
     }
 
     public static void fixIcons(BedrockServerSession session) {

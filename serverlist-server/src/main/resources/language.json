@@ -41,6 +41,10 @@
     "heading": "Remove Server",
     "serverDropdown": "Servers"
   },
+  "serverStatus": {
+    "online": "\u00a72Online \u00a78- \u00a70%PLAYERS%/%MAX_PLAYERS%",
+    "offline": "\u00a74Offline"
+  },
   "serverGroup": {
     "backBtn": "Back To List"
   },

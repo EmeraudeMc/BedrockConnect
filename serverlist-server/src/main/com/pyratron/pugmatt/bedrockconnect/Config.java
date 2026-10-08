@@ -52,6 +52,8 @@ public class Config {
     private boolean fetchIps = false;
     private boolean storeDisplayNames = true;
     private boolean onlineMode = true;
+    private boolean serverStatus = true;
+    private boolean serverStatusPrivate = false;
     private int packetLimit = 200;
     private int globalPacketLimit = RakConstants.DEFAULT_GLOBAL_PACKET_LIMIT;
     private HashMap<String, String> featuredServerIps;
@@ -114,7 +116,7 @@ public class Config {
                             dbType = DatabaseTypes.postgres;
                             break;
                         default:
-                            BedrockConnect.logger.error("Unknown database type '" + dbType + "'. Valid values: mysql, postgres, mariadb, none");
+                            BedrockConnect.logger.error("Unknown database type '" + type + "'. Valid values: mysql, postgres, mariadb, none");
                             System.exit(1);
                     }
                     break;
@@ -247,6 +249,12 @@ public class Config {
                     break;
                 case "online_mode":
                     onlineMode = setting.getValue().equalsIgnoreCase("true");
+                    break;
+                case "server_status":
+                    serverStatus = setting.getValue().equalsIgnoreCase("true");
+                    break;
+                case "server_status_private":
+                    serverStatusPrivate = setting.getValue().equalsIgnoreCase("true");
                     break;
             }
         }
@@ -431,6 +439,20 @@ public class Config {
 
      public boolean isOnlineModeEnabled() {
         return onlineMode;
+    }
+
+    /**
+     * Show online status / player count of servers in the server list
+     */
+    public boolean isServerStatusEnabled() {
+        return serverStatus;
+    }
+
+    /**
+     * Allow pinging player-added servers that resolve to private/local network addresses
+     */
+    public boolean canPingPrivateServers() {
+        return serverStatusPrivate;
     }
 
     public boolean canFetchIps() {
